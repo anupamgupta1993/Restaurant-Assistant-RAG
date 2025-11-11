@@ -1,0 +1,6 @@
+# Environment variables template for LLM-based Agentic RAG
+# Copy this file to .envrc and fill in your actual values
+
+# API Keys
+export OPENAI_API_KEY='your_openai_api_key_here'
+
