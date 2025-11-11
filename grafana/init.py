@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -13,65 +14,41 @@ GRAFANA_URL = "http://localhost:3000"
 GRAFANA_USER = os.getenv("GRAFANA_ADMIN_USER")
 GRAFANA_PASSWORD = os.getenv("GRAFANA_ADMIN_PASSWORD")
 
-PG_HOST = os.getenv("POSTGRES_HOST")
+# For Grafana running in Docker, use the service name 'postgres' instead of 'localhost'
+PG_HOST = os.getenv("POSTGRES_HOST", "localhost")
+# If running from host machine, use localhost; if Grafana is in Docker, use 'postgres'
+# Since Grafana runs in Docker, we need to use the Docker service name
+GRAFANA_POSTGRES_HOST = os.getenv("GRAFANA_POSTGRES_HOST", "postgres")
 PG_DB = os.getenv("POSTGRES_DB")
 PG_USER = os.getenv("POSTGRES_USER")
 PG_PASSWORD = os.getenv("POSTGRES_PASSWORD")
-PG_PORT = os.getenv("POSTGRES_PORT")
+PG_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 
-def create_api_key():
-    auth = (GRAFANA_USER, GRAFANA_PASSWORD)
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "name": "ProgrammaticKey",
-        "role": "Admin",
-    }
-    response = requests.post(
-        f"{GRAFANA_URL}/api/auth/keys", auth=auth, headers=headers, json=payload
-    )
-
-    if response.status_code == 200:
-        print("API key created successfully")
-        return response.json()["key"]
-
-    elif response.status_code == 409:  # Conflict, key already exists
-        print("API key already exists, updating...")
-        # Find the existing key
-        keys_response = requests.get(f"{GRAFANA_URL}/api/auth/keys", auth=auth)
-        if keys_response.status_code == 200:
-            for key in keys_response.json():
-                if key["name"] == "ProgrammaticKey":
-                    # Delete the existing key
-                    delete_response = requests.delete(
-                        f"{GRAFANA_URL}/api/auth/keys/{key['id']}", auth=auth
-                    )
-                    if delete_response.status_code == 200:
-                        print("Existing key deleted")
-                        # Create a new key
-                        return create_api_key()
-        print("Failed to update API key")
-        return None
-    else:
-        print(f"Failed to create API key: {response.text}")
-        return None
+def get_auth():
+    """Returns basic auth tuple for API requests"""
+    return (GRAFANA_USER, GRAFANA_PASSWORD)
 
 
-def create_or_update_datasource(api_key):
+def create_or_update_datasource():
+    auth = get_auth()
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     datasource_payload = {
         "name": "PostgreSQL",
         "type": "postgres",
-        "url": f"{PG_HOST}:{PG_PORT}",
+        "url": f"{GRAFANA_POSTGRES_HOST}:{PG_PORT}",
         "access": "proxy",
         "user": PG_USER,
         "database": PG_DB,
         "basicAuth": False,
         "isDefault": True,
-        "jsonData": {"sslmode": "disable", "postgresVersion": 1300},
+        "jsonData": {
+            "sslmode": "disable",
+            "postgresVersion": 1300,
+            "database": PG_DB
+        },
         "secureJsonData": {"password": PG_PASSWORD},
     }
 
@@ -81,6 +58,7 @@ def create_or_update_datasource(api_key):
     # First, try to get the existing datasource
     response = requests.get(
         f"{GRAFANA_URL}/api/datasources/name/{datasource_payload['name']}",
+        auth=auth,
         headers=headers,
     )
 
@@ -91,6 +69,7 @@ def create_or_update_datasource(api_key):
         print(f"Updating existing datasource with id: {datasource_id}")
         response = requests.put(
             f"{GRAFANA_URL}/api/datasources/{datasource_id}",
+            auth=auth,
             headers=headers,
             json=datasource_payload,
         )
@@ -98,7 +77,7 @@ def create_or_update_datasource(api_key):
         # Datasource doesn't exist, create a new one
         print("Creating new datasource")
         response = requests.post(
-            f"{GRAFANA_URL}/api/datasources", headers=headers, json=datasource_payload
+            f"{GRAFANA_URL}/api/datasources", auth=auth, headers=headers, json=datasource_payload
         )
 
     print(f"Response status code: {response.status_code}")
@@ -115,13 +94,15 @@ def create_or_update_datasource(api_key):
         return None
 
 
-def create_dashboard(api_key, datasource_uid):
+def create_dashboard(datasource_uid):
+    auth = get_auth()
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-    dashboard_file = "dashboard.json"
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent
+    dashboard_file = script_dir / "dashboard.json"
 
     try:
         with open(dashboard_file, "r") as f:
@@ -164,7 +145,7 @@ def create_dashboard(api_key, datasource_uid):
     print("Sending dashboard creation request...")
 
     response = requests.post(
-        f"{GRAFANA_URL}/api/dashboards/db", headers=headers, json=dashboard_payload
+        f"{GRAFANA_URL}/api/dashboards/db", auth=auth, headers=headers, json=dashboard_payload
     )
 
     print(f"Response status code: {response.status_code}")
@@ -179,17 +160,12 @@ def create_dashboard(api_key, datasource_uid):
 
 
 def main():
-    api_key = create_api_key()
-    if not api_key:
-        print("API key creation failed")
-        return
-
-    datasource_uid = create_or_update_datasource(api_key)
+    datasource_uid = create_or_update_datasource()
     if not datasource_uid:
         print("Datasource creation failed")
         return
 
-    create_dashboard(api_key, datasource_uid)
+    create_dashboard(datasource_uid)
 
 
 if __name__ == "__main__":
