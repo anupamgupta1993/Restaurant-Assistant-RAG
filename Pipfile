@@ -1,0 +1,21 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+qdrant-client = {extras = ["fastembed"], version = ">=1.14.2"}
+pandas = "*"
+openai = "*"
+jupyter = "*"
+ipykernel = "*"
+flask = "*"
+psycopg2-binary = "*"
+python-dotenv = "*"
+requests = "*"
+questionary = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.10.0"
