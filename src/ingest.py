@@ -34,11 +34,23 @@ def load_index():
     if vector_store.client.collection_exists(collection_name=collection_name):
         print(f"Collection '{collection_name}' already exists. Skipping indexing.")
     else:
-        print(f"Collection '{collection_name}' does not exist. Creating and indexing...")
-        engine.initialize_collection()
-        thread = engine.index_data()
-        # Optionally block until indexing finishes
-        # thread.join()
+        print(f"Collection '{collection_name}' does not exist. Create the index first.")
     
     return engine
+
+def create_index():
+    vector_store, embedding, data_loader = _get_or_create_instances()
+
+    engine = RestaurantSearchEngine(vector_store, embedding, data_loader)
+
+    # Check if collection already exists
+    collection_name = engine.default_collection
+    print(f"Collection '{collection_name}' Creating and indexing...")
+    engine.initialize_collection()
+    thread = engine.index_data()
+    
+    # Optionally block until indexing finishes
+    # thread.join()
+    
+    return True
     
